@@ -154,7 +154,7 @@ class CreatePNG():
         image_array[:, :, 2] = 255 - 255 * self.arr
         image_array[:, :, 3] = self.arr * 255
         image = Image.fromarray(image_array, 'RGBA')
-        image = image.resize((int(self.arr.shape[1] * self.downscale), int(self.arr.shape[0] * self.downscale)), Image.BILINEAR)
+        image = image.resize((int(self.arr.shape[1] * self.downscale), int(self.arr.shape[0] * self.downscale)), Image.NEAREST)
         image.save(self.output_name)
 
 
@@ -202,7 +202,7 @@ def generate_border_and_mask(mask_file_path):
 
 
 def count_section(directory, model, oft):
-    input_mask = os.path.join(directory, "Mask.jpg")
+    input_mask = os.path.join(directory, "mask.jpg")
     output_image = os.path.join(directory, "Image.jpg")
     output_svg = os.path.join(directory, "Boutons.svg")
     output_png = os.path.join(directory, "Boutons.png")
@@ -212,23 +212,21 @@ def count_section(directory, model, oft):
     if os.path.exists(output_image):
         arr = file_to_array(output_image).astype(np.float32)
     else:
+        """
+        Loads images exported by either CellSens or VS-ASW into memory
+        """
         files = [f for f in sorted(os.listdir(directory)) if
                  os.path.isfile(os.path.join(directory, f)) and (f.endswith(".tif") or f.endswith("png")) and "IMAGE" in f]
         if len(files) == 0:  # If exported through CellSens
             for r, d, f in os.walk(directory, topdown=False):
                 for file in f:
                     if file.endswith(".tif") and "EFI" in file:
-                        print(os.path.join(r, file))
                         arr = file_to_array(os.path.join(r, file)).astype(np.float32)
-                        os.remove(os.path.join(r, file))
-                if r != directory:
-                    os.rmdir(r)
         else:
             try:
                 arrs = []
                 for file in files:  # If exported through VS-ASW
                     arrs.append(file_to_array(os.path.join(directory, file)).astype(np.float32))
-                    os.remove(os.path.join(directory, file))
                 if arrs[0].shape[0] > arrs[0].shape[1]:
                     arr = np.concatenate(arrs, axis=1)
                 else:
@@ -236,40 +234,56 @@ def count_section(directory, model, oft):
             except OSError:
                 print("Images for %s do not exist" % directory)
                 return
+        """
+        Saves imported image as "Image.jpg"
+        This makes it easier to access in the future
+        """
         print("Working on %s" % directory)
-    arr = (arr - arr.min()) / (arr.max() - arr.min())
-    im = Image.fromarray(arr * 255).convert("L")
-    im.save(output_image)
+        arr = (arr - arr.min()) / (arr.max() - arr.min())
+        im = Image.fromarray(arr * 255).convert("L")
+        im.save(output_image)
+        """
+        Deletes imported images
+        """
+        if len(files) == 0:
+            for r, d, f in os.walk(directory, topdown=False):  # If exported through CellSens
+                for file in f:
+                    if (file.endswith(".tif") and "EFI" in file) or "SUCCESS" in file or ".db" in file:
+                        os.remove(os.path.join(r, file))
+                if r != directory:
+                    os.rmdir(r)
+        else:
+            for file in files:
+                os.remove(os.path.join(directory, file))
     if oft.any():
-        mask = None
-        if os.path.exists(input_mask):
-            mask, _ = generate_border_and_mask(input_mask)
-        print("Working on %s" % directory)
-        print("Load Time: %.2f" % (time.time() - start_time))
-        start_time = time.time()
-        X, COMs = local_minima_generate_points(arr, mask)
-        print("Proposal Time: %.2f" % (time.time() - start_time))
-        start_time = time.time()
-        output = model.predict(X)
-        print("ML Time: %.2f" % (time.time() - start_time))
-        start_time = time.time()
-        true_cells = COMs[output[:, 0] > 0.95, :]
+        if os.path.exists(output_csv):
+            true_cells = np.loadtxt(output_csv, delimiter=",")
+        else:
+            mask = None
+            if os.path.exists(input_mask):
+                mask, _ = generate_border_and_mask(input_mask)
+            print("Working on %s" % directory)
+            print("Load Time: %.2f" % (time.time() - start_time))
+            start_time = time.time()
+            X, COMs = local_minima_generate_points(arr, mask)
+            print("Proposal Time: %.2f" % (time.time() - start_time))
+            start_time = time.time()
+            output = model.predict(X)
+            print("ML Time: %.2f" % (time.time() - start_time))
+            start_time = time.time()
+            true_cells = COMs[output[:, 0] > 0.95, :]
         if oft.svg and not os.path.exists(output_svg):
             svg = CreateSVG(output_svg, arr.shape, output_image)
             for i in range(true_cells.shape[0]):
                 svg.add_symbol(location_xy=(true_cells[i, 1], true_cells[i, 0]))
             svg.output()
         if oft.png:
-            png = CreatePNG(output_png, arr.shape, downscale=0.3)
+            png = CreatePNG(output_png, arr.shape, downscale=0.25)
             for i in range(true_cells.shape[0]):
                 png.add_symbol(location_xy=(true_cells[i, 1], true_cells[i, 0]))
             png.output()
         if oft.csv:
-            str = ""
-            for i in range(true_cells.shape[0]):
-                str += "%s,%s%s" % (true_cells[i, 1], true_cells[i, 0], os.linesep)
-            with open(output_csv, 'w') as f:
-                f.write(str)
+            np.savetxt(output_csv, true_cells, delimiter=",")
         print("Output Time: %.2f" % (time.time() - start_time))
 
 
