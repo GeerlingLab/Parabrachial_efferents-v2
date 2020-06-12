@@ -131,7 +131,7 @@ class CreatePNG():
         self.x = artboard_size_xy[0]
         self.y = artboard_size_xy[1]
         self.arr = np.zeros(shape=(self.x, self.y), dtype=np.bool)
-        self.radius = 5
+        self.radius = 9
         self.symbol_shape = np.zeros((self.radius * 2 + 1, self.radius * 2 + 1), dtype=np.bool)
         self.downscale = downscale
         for x in range(self.radius * 2 + 1):
@@ -142,8 +142,8 @@ class CreatePNG():
     def add_symbol(self, location_xy):
         try:
             y, x = location_xy[0], location_xy[1]
-            self.arr[x - self.radius: x + self.radius + 1, y - self.radius: y + self.radius + 1] = \
-                np.logical_or(self.arr[x - self.radius: x + self.radius + 1, y - self.radius: y + self.radius + 1], self.symbol_shape)
+            self.arr[int(x - self.radius): int(x + self.radius + 1), int(y - self.radius): int(y + self.radius + 1)] = \
+                np.logical_or(self.arr[int(x - self.radius): int(x + self.radius + 1), int(y - self.radius): int(y + self.radius + 1)], self.symbol_shape)
         except ValueError as e:
             pass
 
@@ -154,7 +154,7 @@ class CreatePNG():
         image_array[:, :, 2] = 255 - 255 * self.arr
         image_array[:, :, 3] = self.arr * 255
         image = Image.fromarray(image_array, 'RGBA')
-        image = image.resize((int(self.arr.shape[1] * self.downscale), int(self.arr.shape[0] * self.downscale)), Image.NEAREST)
+        image = image.resize((int(self.arr.shape[1] * self.downscale), int(self.arr.shape[0] * self.downscale)), Image.BILINEAR)
         image.save(self.output_name)
 
 
