@@ -101,8 +101,9 @@ def detect_local_minima(arr, mask=None):
     dilated = scipy.ndimage.morphology.grey_dilation(arr, size=(scale, scale))
     eroded = scipy.ndimage.morphology.grey_erosion(arr, size=(scale, scale))
     x1 = arr == eroded
-    x2 = arr < dilated - .01
-    x = np.logical_and(x1, x2)
+    x2 = arr < dilated - 5
+    x3 = arr < 200
+    x = x1 * x2 * x3
     if mask is not None:
         x = x * mask
     x[:RADIUS, :] = False
@@ -131,7 +132,7 @@ class CreatePNG():
         self.x = artboard_size_xy[0]
         self.y = artboard_size_xy[1]
         self.arr = np.zeros(shape=(self.x, self.y), dtype=np.bool)
-        self.radius = 9
+        self.radius = 5
         self.symbol_shape = np.zeros((self.radius * 2 + 1, self.radius * 2 + 1), dtype=np.bool)
         self.downscale = downscale
         for x in range(self.radius * 2 + 1):
@@ -216,11 +217,11 @@ def count_section(directory, model, oft):
         Loads images exported by either CellSens or VS-ASW into memory
         """
         files = [f for f in sorted(os.listdir(directory)) if
-                 os.path.isfile(os.path.join(directory, f)) and (f.endswith(".tif") or f.endswith("png")) and "IMAGE" in f]
+                 os.path.isfile(os.path.join(directory, f)) and (f.endswith(".tif") or f.endswith("png") or f.endswith("jpg")) and "IMAGE" in f]
         if len(files) == 0:  # If exported through CellSens
             for r, d, f in os.walk(directory, topdown=False):
                 for file in f:
-                    if file.endswith(".tif") and "EFI" in file:
+                    if (file.endswith("tif") or file.endswith("jpg")) and "20x" in file:
                         arr = file_to_array(os.path.join(r, file)).astype(np.float32)
         else:
             try:
@@ -239,6 +240,7 @@ def count_section(directory, model, oft):
         This makes it easier to access in the future
         """
         print("Working on %s" % directory)
+        assert(arr is not None)
         arr = (arr - arr.min()) / (arr.max() - arr.min())
         im = Image.fromarray(arr * 255).convert("L")
         im.save(output_image)
@@ -248,7 +250,7 @@ def count_section(directory, model, oft):
         if len(files) == 0:
             for r, d, f in os.walk(directory, topdown=False):  # If exported through CellSens
                 for file in f:
-                    if (file.endswith(".tif") and "EFI" in file) or "SUCCESS" in file or ".db" in file:
+                    if (file.endswith(".tif") and "20x" in file) or "SUCCESS" in file or ".db" in file:
                         os.remove(os.path.join(r, file))
                 if r != directory:
                     os.rmdir(r)
@@ -262,7 +264,6 @@ def count_section(directory, model, oft):
             mask = None
             if os.path.exists(input_mask):
                 mask, _ = generate_border_and_mask(input_mask)
-            print("Working on %s" % directory)
             print("Load Time: %.2f" % (time.time() - start_time))
             start_time = time.time()
             X, COMs = local_minima_generate_points(arr, mask)
@@ -272,6 +273,12 @@ def count_section(directory, model, oft):
             print("ML Time: %.2f" % (time.time() - start_time))
             start_time = time.time()
             true_cells = COMs[output[:, 0] > 0.95, :]
+            print("%s boutons" % true_cells.shape[0])
+            if mask is not None:
+                valid_size = mask.sum() * (0.345 ** 2)
+            else:
+                valid_size = arr.size * (0.345 ** 2)
+            print("%.4f boutons per um^2" % (true_cells.shape[0] / valid_size))
         if oft.svg and not os.path.exists(output_svg):
             svg = CreateSVG(output_svg, arr.shape, output_image)
             for i in range(true_cells.shape[0]):
