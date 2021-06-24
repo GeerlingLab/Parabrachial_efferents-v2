@@ -203,13 +203,14 @@ def generate_border_and_mask(mask_file_path):
 
 
 def count_section(directory, model, oft):
-    input_mask = os.path.join(directory, "mask.jpg")
+    input_mask = os.path.join(directory, "Mask.png")
     output_image = os.path.join(directory, "Image.jpg")
     output_svg = os.path.join(directory, "Boutons.svg")
     output_png = os.path.join(directory, "Boutons.png")
     output_csv = os.path.join(directory, "Boutons.csv")
     arr = None
     start_time = time.time()
+    print("Working on %s" % directory)
     if os.path.exists(output_image):
         arr = file_to_array(output_image).astype(np.float32)
     else:
@@ -239,9 +240,8 @@ def count_section(directory, model, oft):
         Saves imported image as "Image.jpg"
         This makes it easier to access in the future
         """
-        print("Working on %s" % directory)
         assert(arr is not None)
-        arr = (arr - arr.min()) / (arr.max() - arr.min())
+        arr = (255 * (arr - arr.min()) / (arr.max() - arr.min())).astype(np.int)
         im = Image.fromarray(arr * 255).convert("L")
         im.save(output_image)
         """
