@@ -6,8 +6,8 @@ from PIL import Image
 import time
 from Constants import SIZE, RADIUS
 from keras.models import model_from_json
-
-
+from pathlib import Path
+import shutil
 """
 Tested using Python 3.6.8, numpy 1.16.4, scipy 1.2.1, pillow 6.0.0, keras 2.2.4, tensorflow 1.12.0
 Tested using 20x EFI Images from Olympus Slide Scanner as outlined in paper
@@ -203,8 +203,8 @@ def generate_border_and_mask(mask_file_path):
 
 
 def count_section(directory, model, oft):
-    input_mask = os.path.join(directory, "Mask.png")
-    output_image = os.path.join(directory, "Image.jpg")
+    input_mask = os.path.join(directory, "mask.png")
+    output_image = os.path.join(directory, "Image.png")
     output_svg = os.path.join(directory, "Boutons.svg")
     output_png = os.path.join(directory, "Boutons.png")
     output_csv = os.path.join(directory, "Boutons.csv")
@@ -217,13 +217,21 @@ def count_section(directory, model, oft):
         """
         Loads images exported by either CellSens or VS-ASW into memory
         """
+        arr = None
         files = [f for f in sorted(os.listdir(directory)) if
                  os.path.isfile(os.path.join(directory, f)) and (f.endswith(".tif") or f.endswith("png") or f.endswith("jpg")) and "IMAGE" in f]
         if len(files) == 0:  # If exported through CellSens
-            for r, d, f in os.walk(directory, topdown=False):
-                for file in f:
-                    if (file.endswith("tif") or file.endswith("jpg")) and "20x" in file:
-                        arr = file_to_array(os.path.join(r, file)).astype(np.float32)
+            files = list(Path(directory).rglob("*20x*.tif"))
+            if len(files) == 1:
+                arr = file_to_array(files[0])
+                os.rename(files[0], output_image)
+                shutil.rmtree(files[0].parents[1])
+            elif len(files) == 0:
+                print("No valid image files in %s" % directory)
+                return
+            else:
+                print("Too many valid image files in %s" % directory)
+                return
         else:
             try:
                 arrs = []
@@ -236,25 +244,6 @@ def count_section(directory, model, oft):
             except OSError:
                 print("Images for %s do not exist" % directory)
                 return
-        """
-        Saves imported image as "Image.jpg"
-        This makes it easier to access in the future
-        """
-        assert(arr is not None)
-        arr = (255 * (arr - arr.min()) / (arr.max() - arr.min())).astype(np.int)
-        im = Image.fromarray(arr * 255).convert("L")
-        im.save(output_image)
-        """
-        Deletes imported images
-        """
-        if len(files) == 0:
-            for r, d, f in os.walk(directory, topdown=False):  # If exported through CellSens
-                for file in f:
-                    if (file.endswith(".tif") and "20x" in file) or "SUCCESS" in file or ".db" in file:
-                        os.remove(os.path.join(r, file))
-                if r != directory:
-                    os.rmdir(r)
-        else:
             for file in files:
                 os.remove(os.path.join(directory, file))
     if oft.any():
